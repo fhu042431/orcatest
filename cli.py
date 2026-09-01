@@ -267,6 +267,74 @@ def order_menu():
             break
 
 
+# ─── User Management ───────────────────────────────────────
+
+def register():
+    """Register a new user."""
+    print("\n--- 用户注册 ---")
+    username = input("用户名: ").strip()
+    if not username:
+        print("  用户名不能为空")
+        return None
+    if models.get_user_by_username(username):
+        print("  用户名已存在")
+        return None
+    password = input("密码: ").strip()
+    if not password:
+        print("  密码不能为空")
+        return None
+    password2 = input("确认密码: ").strip()
+    if password != password2:
+        print("  两次密码不一致")
+        return None
+    display_name = input("显示名称 (可选): ").strip() or None
+    uid = models.add_user(username, password, display_name)
+    if uid:
+        print(f"  注册成功！欢迎 {username}")
+        return models.get_user_by_username(username)
+    else:
+        print("  注册失败")
+        return None
+
+
+def login():
+    """Login and return the user object, or None."""
+    print("\n--- 用户登录 ---")
+    username = input("用户名: ").strip()
+    password = input("密码: ").strip()
+    user = models.verify_user(username, password)
+    if user:
+        name = user["display_name"] or user["username"]
+        print(f"  登录成功！欢迎 {name}")
+        return user
+    else:
+        print("  用户名或密码错误")
+        return None
+
+
+def auth_menu():
+    """Login/Register screen. Returns a user dict on success, or None to exit."""
+    while True:
+        print("\n===== 采购管理系统 =====")
+        print("1. 登录")
+        print("2. 注册")
+        print("0. 退出")
+        choice = input("请选择: ").strip()
+        if choice == "1":
+            user = login()
+            if user:
+                return user
+        elif choice == "2":
+            user = register()
+            if user:
+                return user
+        elif choice == "0":
+            print("再见!")
+            sys.exit(0)
+        else:
+            print("  无效选择")
+
+
 # ─── Main ──────────────────────────────────────────────────
 
 def main():
@@ -274,12 +342,17 @@ def main():
     print("=" * 30)
     print("   采购管理系统")
     print("=" * 30)
+
+    # Login first
+    user = auth_menu()
+
     while True:
-        print("\n===== 采购管理系统 =====")
+        print(f"\n===== 采购管理系统 ({user['username']}) =====")
         print("1. 供应商管理")
         print("2. 商品管理")
         print("3. 采购订单管理")
-        print("0. 退出")
+        print("4. 退出登录")
+        print("0. 退出系统")
         choice = input("请选择: ").strip()
         if choice == "1":
             supplier_menu()
@@ -287,6 +360,9 @@ def main():
             product_menu()
         elif choice == "3":
             order_menu()
+        elif choice == "4":
+            print("已退出登录")
+            user = auth_menu()
         elif choice == "0":
             print("再见!")
             sys.exit(0)

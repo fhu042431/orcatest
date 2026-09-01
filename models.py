@@ -1,6 +1,61 @@
 """CRUD operations for all entities."""
 
-from db import get_connection
+from db import get_connection, hash_password, verify_password
+
+
+# ─── Users ─────────────────────────────────────────────────
+
+def add_user(username, password, display_name=None):
+    """Register a new user. Returns the new user id, or None if username exists."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)",
+            (username, hash_password(password), display_name),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+    except Exception:
+        row_id = None
+    finally:
+        conn.close()
+    return row_id
+
+
+def get_user_by_username(username):
+    """Return a user by username, or None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def verify_user(username, password):
+    """Verify login credentials. Returns the user dict if valid, or None."""
+    user = get_user_by_username(username)
+    if user and verify_password(password, user["password_hash"]):
+        return user
+    return None
+
+
+def get_all_users():
+    """Return all users (without password hashes)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT id, username, display_name, created_at FROM users ORDER BY id"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def delete_user(user_id):
+    """Delete a user by id."""
+    conn = get_connection()
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
 
 
 # ─── Suppliers ─────────────────────────────────────────────

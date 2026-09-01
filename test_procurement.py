@@ -2,7 +2,7 @@
 
 import pytest
 import sqlite3
-from db import get_connection, init_db
+from db import get_connection, init_db, hash_password, verify_password
 import models
 
 
@@ -55,6 +55,13 @@ def setup_db(tmp_path, monkeypatch):
             subtotal REAL NOT NULL,
             FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
     conn.commit()
@@ -215,3 +222,66 @@ class TestConstraints:
         pid = models.add_product("螺丝", "包", 5.0)
         with pytest.raises(sqlite3.IntegrityError):
             models.add_order_item(999, pid, 10, 5.0)
+
+
+# ─── Password Hash Tests ──────────────────────────────────
+
+class TestPasswordHash:
+    def test_hash_and_verify(self):
+        hashed = hash_password("mypassword")
+        assert verify_password("mypassword", hashed)
+
+    def test_wrong_password(self):
+        hashed = hash_password("mypassword")
+        assert not verify_password("wrongpassword", hashed)
+
+    def test_different_hashes_same_password(self):
+        h1 = hash_password("test")
+        h2 = hash_password("test")
+        # Different salts produce different hashes
+        assert h1 != h2
+        # But both verify correctly
+        assert verify_password("test", h1)
+        assert verify_password("test", h2)
+
+
+# ─── User Auth Tests ───────────────────────────────────────
+
+class TestUserAuth:
+    def test_add_user(self):
+        uid = models.add_user("admin", "secret123", "管理员")
+        assert uid is not None
+        user = models.get_user_by_username("admin")
+        assert user["username"] == "admin"
+        assert user["display_name"] == "管理员"
+
+    def test_add_user_duplicate(self):
+        models.add_user("admin", "secret123")
+        uid2 = models.add_user("admin", "another")
+        assert uid2 is None
+
+    def test_verify_user_success(self):
+        models.add_user("admin", "secret123")
+        user = models.verify_user("admin", "secret123")
+        assert user is not None
+        assert user["username"] == "admin"
+
+    def test_verify_user_wrong_password(self):
+        models.add_user("admin", "secret123")
+        user = models.verify_user("admin", "wrong")
+        assert user is None
+
+    def test_verify_user_not_found(self):
+        user = models.verify_user("nobody", "pass")
+        assert user is None
+
+    def test_get_all_users(self):
+        models.add_user("user1", "pass1")
+        models.add_user("user2", "pass2")
+        users = models.get_all_users()
+        assert len(users) == 2
+
+    def test_delete_user(self):
+        uid = models.add_user("admin", "secret123")
+        models.delete_user(uid)
+        assert models.get_user_by_username("admin") is None

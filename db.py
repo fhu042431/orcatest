@@ -1,8 +1,24 @@
 """Database initialization and connection management."""
 
 import sqlite3
+import hashlib
+import os
 
 DB_FILE = "procurement.db"
+
+
+def hash_password(password, salt=None):
+    """Hash a password with a salt using SHA-256."""
+    if salt is None:
+        salt = os.urandom(16).hex()
+    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}:{hashed}"
+
+
+def verify_password(password, stored_hash):
+    """Verify a password against a stored hash."""
+    salt, _ = stored_hash.split(":")
+    return hash_password(password, salt) == stored_hash
 
 
 def get_connection(db_path=None):
@@ -56,6 +72,14 @@ def init_db(db_path=None):
             subtotal REAL NOT NULL,
             FOREIGN KEY (order_id) REFERENCES purchase_orders(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
 
