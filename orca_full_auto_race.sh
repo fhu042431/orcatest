@@ -14,7 +14,7 @@ ISSUE_FULL="【${ISSUE_TITLE}】
 ${ISSUE_BODY}"
 
 TIME_STAMP=$(date +%Y%m%d_%H%M%S)
-AGENTS=("claude" "opencode" "codex")
+AGENTS=( "opencode" )
 
 # ===================== Prompt：要求AI开发功能 + 自行编写测试代码并自测 =====================
 PROMPT="#任务说明
@@ -47,6 +47,7 @@ for agent in "${AGENTS[@]}"; do
   orca worktree create \
     --base "${BASE_BRANCH}" \
     --agent "${agent}-code" \
+    --model opencode/mimo-v2.5-free \
     --name "${WT_NAME}" \
     --branch "${BRANCH_NAME}" \
     --prompt "${PROMPT}"
