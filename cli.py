@@ -1,6 +1,7 @@
 """Terminal menu-driven CLI for the procurement system."""
 
 import sys
+import textwrap
 from db import init_db
 import models
 
@@ -335,6 +336,78 @@ def auth_menu():
             print("  无效选择")
 
 
+# ─── Kanban Board ──────────────────────────────────────────
+
+def print_kanban_card(order, max_width=28):
+    """Print a single order card inside a kanban column."""
+    lines = [
+        f"#{order['id']} {order['supplier_name']}",
+        f"¥{order['total_amount']:.2f}  |  {order['item_count']}项",
+        f"{order['created_at'][:10] if order['created_at'] else ''}",
+    ]
+    # Wrap long supplier names
+    wrapped = []
+    for line in lines:
+        if len(line) > max_width - 2:
+            wrapped.append(line[:max_width - 5] + "...")
+        else:
+            wrapped.append(line)
+    # Pad and print card
+    print("  ┌" + "─" * max_width + "┐")
+    for line in wrapped:
+        print(f"  │ {line:<{max_width}} │")
+    print("  └" + "─" * max_width + "┘")
+
+
+def print_kanban_column(label, orders, col_width=32):
+    """Print one kanban column with header and cards."""
+    header = f"【{label}】({len(orders)})"
+    print(f"\n{header}")
+    print("  " + "─" * col_width)
+    if not orders:
+        print("  (空)")
+    else:
+        for order in orders:
+            print_kanban_card(order, max_width=col_width - 2)
+    print()
+
+
+def kanban_menu():
+    """Interactive kanban board showing purchase orders grouped by status."""
+    # Single-column view: user picks which status to view
+    columns = models.KANBAN_COLUMNS
+    labels = models.KANBAN_LABELS
+    while True:
+        print("\n--- 采购订单看板 ---")
+        print("  显示模式:")
+        print("1. 单列查看 (选择一个状态)")
+        print("2. 全部概览 (所有状态并排)")
+        print("0. 返回上级")
+        choice = input("请选择: ").strip()
+        if choice == "1":
+            print("\n  可选状态:")
+            for i, col in enumerate(columns, 1):
+                orders = models.get_orders_by_status(col)
+                print(f"  {i}. {labels[col]} ({len(orders)}个)")
+            idx = input_int("选择状态编号: ")
+            if idx is None or idx < 1 or idx > len(columns):
+                print("  无效选择"); continue
+            status = columns[idx - 1]
+            orders = models.get_orders_by_status(status)
+            print_kanban_column(labels[status], orders)
+            pause()
+        elif choice == "2":
+            kanban_data = models.get_kanban_data()
+            for label in [labels[c] for c in columns]:
+                orders = kanban_data.get(label, [])
+                print_kanban_column(label, orders)
+            pause()
+        elif choice == "0":
+            break
+        else:
+            print("  无效选择")
+
+
 # ─── Main ──────────────────────────────────────────────────
 
 def main():
@@ -351,7 +424,8 @@ def main():
         print("1. 供应商管理")
         print("2. 商品管理")
         print("3. 采购订单管理")
-        print("4. 退出登录")
+        print("4. 采购看板")
+        print("5. 退出登录")
         print("0. 退出系统")
         choice = input("请选择: ").strip()
         if choice == "1":
@@ -361,6 +435,8 @@ def main():
         elif choice == "3":
             order_menu()
         elif choice == "4":
+            kanban_menu()
+        elif choice == "5":
             print("已退出登录")
             user = auth_menu()
         elif choice == "0":

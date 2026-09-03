@@ -258,3 +258,49 @@ def delete_order(order_id):
     conn.execute("DELETE FROM purchase_orders WHERE id = ?", (order_id,))
     conn.commit()
     conn.close()
+
+
+# ─── Kanban Board ──────────────────────────────────────────
+
+KANBAN_COLUMNS = ["pending", "confirmed", "shipped", "received", "cancelled"]
+KANBAN_LABELS = {
+    "pending": "待处理",
+    "confirmed": "已确认",
+    "shipped": "已发货",
+    "received": "已收货",
+    "cancelled": "已取消",
+}
+
+
+def get_orders_by_status(status):
+    """Return all orders for a given status column, with supplier name and item count."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT o.id, o.total_amount, o.status, o.created_at, "
+        "       s.name AS supplier_name, "
+        "       COUNT(oi.id) AS item_count "
+        "FROM purchase_orders o "
+        "JOIN suppliers s ON o.supplier_id = s.id "
+        "LEFT JOIN order_items oi ON oi.order_id = o.id "
+        "WHERE o.status = ? "
+        "GROUP BY o.id "
+        "ORDER BY o.id DESC",
+        (status,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_kanban_data():
+    """Return all orders grouped by status for the kanban board.
+
+    Returns a dict: { status_label: [ {id, supplier_name, total_amount,
+    item_count, created_at}, ... ], ... }
+    """
+    data = {}
+    for status in KANBAN_COLUMNS:
+        orders = get_orders_by_status(status)
+        data[KANBAN_LABELS[status]] = [
+            dict(o) for o in orders
+        ]
+    return data

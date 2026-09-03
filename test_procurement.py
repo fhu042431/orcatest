@@ -285,3 +285,322 @@ class TestUserAuth:
         uid = models.add_user("admin", "secret123")
         models.delete_user(uid)
         assert models.get_user_by_username("admin") is None
+
+
+# ─── Kanban Board Tests ──────────────────────────────────
+
+class TestKanbanConstants:
+    """Test kanban module constants are correctly defined."""
+
+    def test_kanban_columns_has_five_statuses(self):
+        assert len(models.KANBAN_COLUMNS) == 5
+
+    def test_kanban_columns_contain_valid_statuses(self):
+        expected = {"pending", "confirmed", "shipped", "received", "cancelled"}
+        assert set(models.KANBAN_COLUMNS) == expected
+
+    def test_kanban_labels_cover_all_columns(self):
+        for col in models.KANBAN_COLUMNS:
+            assert col in models.KANBAN_LABELS
+
+    def test_kanban_labels_are_chinese(self):
+        for label in models.KANBAN_LABELS.values():
+            assert isinstance(label, str)
+            assert len(label) > 0
+
+
+class TestGetOrdersByStatus:
+    """Test get_orders_by_status() function."""
+
+    def _make_order_with_status(self, status, supplier_name="供应商A"):
+        sid = models.add_supplier(supplier_name)
+        oid = models.create_order(sid)
+        models.update_order_status(oid, status)
+        return oid
+
+    def test_empty_status_returns_no_orders(self):
+        orders = models.get_orders_by_status("pending")
+        assert orders == []
+
+    def test_pending_orders(self):
+        oid = self._make_order_with_status("pending")
+        orders = models.get_orders_by_status("pending")
+        assert len(orders) == 1
+        assert orders[0]["id"] == oid
+        assert orders[0]["status"] == "pending"
+
+    def test_confirmed_orders(self):
+        oid = self._make_order_with_status("confirmed")
+        orders = models.get_orders_by_status("confirmed")
+        assert len(orders) == 1
+        assert orders[0]["id"] == oid
+
+    def test_shipped_orders(self):
+        oid = self._make_order_with_status("shipped")
+        orders = models.get_orders_by_status("shipped")
+        assert len(orders) == 1
+
+    def test_received_orders(self):
+        oid = self._make_order_with_status("received")
+        orders = models.get_orders_by_status("received")
+        assert len(orders) == 1
+
+    def test_cancelled_orders(self):
+        oid = self._make_order_with_status("cancelled")
+        orders = models.get_orders_by_status("cancelled")
+        assert len(orders) == 1
+
+    def test_orders_not_in_other_statuses(self):
+        """An order in 'pending' should NOT appear in 'confirmed'."""
+        self._make_order_with_status("pending")
+        orders = models.get_orders_by_status("confirmed")
+        assert len(orders) == 0
+
+    def test_multiple_orders_same_status(self):
+        self._make_order_with_status("pending", "供应商A")
+        self._make_order_with_status("pending", "供应商B")
+        self._make_order_with_status("pending", "供应商C")
+        orders = models.get_orders_by_status("pending")
+        assert len(orders) == 3
+
+    def test_orders_across_different_statuses(self):
+        """Orders spread across statuses are correctly separated."""
+        self._make_order_with_status("pending")
+        self._make_order_with_status("confirmed")
+        self._make_order_with_status("shipped")
+        self._make_order_with_status("received")
+        self._make_order_with_status("cancelled")
+        assert len(models.get_orders_by_status("pending")) == 1
+        assert len(models.get_orders_by_status("confirmed")) == 1
+        assert len(models.get_orders_by_status("shipped")) == 1
+        assert len(models.get_orders_by_status("received")) == 1
+        assert len(models.get_orders_by_status("cancelled")) == 1
+
+    def test_result_includes_supplier_name(self):
+        sid = models.add_supplier("测试供应商")
+        oid = models.create_order(sid)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["supplier_name"] == "测试供应商"
+
+    def test_result_includes_item_count_zero(self):
+        """Order with no items should have item_count = 0."""
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["item_count"] == 0
+
+    def test_result_includes_item_count_with_items(self):
+        sid = models.add_supplier("供应商A")
+        pid = models.add_product("螺丝", "包", 5.0, 100)
+        oid = models.create_order(sid)
+        models.add_order_item(oid, pid, 10, 5.0)
+        models.add_order_item(oid, pid, 20, 3.0)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["item_count"] == 2
+
+    def test_result_includes_total_amount(self):
+        sid = models.add_supplier("供应商A")
+        pid = models.add_product("螺丝", "包", 5.0, 100)
+        oid = models.create_order(sid)
+        models.add_order_item(oid, pid, 10, 5.0)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["total_amount"] == 50.0
+
+    def test_result_includes_created_at(self):
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["created_at"] is not None
+
+    def test_orders_sorted_by_created_at_desc(self):
+        """Most recent orders first."""
+        sid = models.add_supplier("供应商A")
+        oid1 = models.create_order(sid)
+        oid2 = models.create_order(sid)
+        oid3 = models.create_order(sid)
+        orders = models.get_orders_by_status("pending")
+        ids = [o["id"] for o in orders]
+        # Should be reverse chronological (newest first)
+        assert ids == sorted(ids, reverse=True)
+
+    def test_invalid_status_returns_empty(self):
+        """Querying with an invalid status should return empty list."""
+        orders = models.get_orders_by_status("nonexistent")
+        assert orders == []
+
+    def test_empty_string_status_returns_empty(self):
+        orders = models.get_orders_by_status("")
+        assert orders == []
+
+
+class TestGetKanbanData:
+    """Test get_kanban_data() function."""
+
+    def test_empty_kanban_returns_all_columns(self):
+        data = models.get_kanban_data()
+        assert isinstance(data, dict)
+        # Should have all 5 columns
+        for label in models.KANBAN_LABELS.values():
+            assert label in data
+
+    def test_empty_kanban_all_columns_empty(self):
+        data = models.get_kanban_data()
+        for label, orders in data.items():
+            assert orders == []
+
+    def test_single_order_in_pending(self):
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        data = models.get_kanban_data()
+        assert len(data["待处理"]) == 1
+        assert data["待处理"][0]["id"] == oid
+        # Other columns empty
+        assert data["已确认"] == []
+        assert data["已发货"] == []
+        assert data["已收货"] == []
+        assert data["已取消"] == []
+
+    def test_orders_distributed_across_columns(self):
+        sid = models.add_supplier("供应商A")
+        pid = models.add_product("螺丝", "包", 5.0, 100)
+        oid1 = models.create_order(sid)
+        models.add_order_item(oid1, pid, 5, 5.0)
+        oid2 = models.create_order(sid)
+        models.update_order_status(oid2, "confirmed")
+        oid3 = models.create_order(sid)
+        models.update_order_status(oid3, "received")
+
+        data = models.get_kanban_data()
+        assert len(data["待处理"]) == 1
+        assert data["待处理"][0]["id"] == oid1
+        assert len(data["已确认"]) == 1
+        assert data["已确认"][0]["id"] == oid2
+        assert len(data["已收货"]) == 1
+        assert data["已收货"][0]["id"] == oid3
+
+    def test_kanban_data_values_are_dicts(self):
+        """Each order in kanban data should be a dict (not Row)."""
+        sid = models.add_supplier("供应商A")
+        models.create_order(sid)
+        data = models.get_kanban_data()
+        for label, orders in data.items():
+            for order in orders:
+                assert isinstance(order, dict)
+
+    def test_multiple_orders_same_column(self):
+        sid = models.add_supplier("供应商A")
+        models.create_order(sid)
+        models.create_order(sid)
+        models.create_order(sid)
+        data = models.get_kanban_data()
+        assert len(data["待处理"]) == 3
+
+    def test_move_order_changes_column(self):
+        """Moving an order from pending to confirmed should shift it."""
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        data1 = models.get_kanban_data()
+        assert len(data1["待处理"]) == 1
+        assert len(data1["已确认"]) == 0
+
+        models.update_order_status(oid, "confirmed")
+        data2 = models.get_kanban_data()
+        assert len(data2["待处理"]) == 0
+        assert len(data2["已确认"]) == 1
+
+    def test_full_workflow_across_all_columns(self):
+        """Simulate an order going through the full procurement lifecycle."""
+        sid = models.add_supplier("供应商A")
+        pid = models.add_product("螺丝", "包", 5.0, 100)
+        oid = models.create_order(sid)
+        models.add_order_item(oid, pid, 10, 5.0)
+
+        # pending -> confirmed -> shipped -> received
+        for next_status in ["confirmed", "shipped", "received"]:
+            models.update_order_status(oid, next_status)
+
+        data = models.get_kanban_data()
+        assert data["待处理"] == []
+        assert data["已确认"] == []
+        assert data["已发货"] == []
+        assert len(data["已收货"]) == 1
+        assert data["已收货"][0]["id"] == oid
+
+    def test_cancel_order_moves_to_cancelled(self):
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        models.update_order_status(oid, "cancelled")
+        data = models.get_kanban_data()
+        assert len(data["已取消"]) == 1
+        assert data["待处理"] == []
+
+
+class TestKanbanEdgeCases:
+    """Edge cases and boundary conditions for kanban features."""
+
+    def test_order_with_many_items_in_kanban(self):
+        sid = models.add_supplier("供应商A")
+        pid = models.add_product("螺丝", "包", 1.0, 1000)
+        oid = models.create_order(sid)
+        for i in range(1, 51):
+            models.add_order_item(oid, pid, i, 1.0)
+        orders = models.get_orders_by_status("pending")
+        assert orders[0]["item_count"] == 50
+        assert orders[0]["total_amount"] == sum(range(1, 51))
+
+    def test_status_update_does_not_create_duplicate(self):
+        """Updating status should move the order, not duplicate it."""
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        models.update_order_status(oid, "confirmed")
+        all_pending = models.get_orders_by_status("pending")
+        all_confirmed = models.get_orders_by_status("confirmed")
+        assert len(all_pending) == 0
+        assert len(all_confirmed) == 1
+        # Total across all columns should be 1
+        total = sum(
+            len(models.get_orders_by_status(col))
+            for col in models.KANBAN_COLUMNS
+        )
+        assert total == 1
+
+    def test_kanban_with_all_orders_cancelled(self):
+        sid = models.add_supplier("供应商A")
+        for _ in range(5):
+            oid = models.create_order(sid)
+            models.update_order_status(oid, "cancelled")
+        data = models.get_kanban_data()
+        assert len(data["已取消"]) == 5
+        for label in ["待处理", "已确认", "已发货", "已收货"]:
+            assert data[label] == []
+
+    def test_get_orders_by_status_with_special_characters_in_supplier(self):
+        """Supplier names with special characters should not break queries."""
+        sid = models.add_supplier("供应商<>&'\"")
+        models.create_order(sid)
+        orders = models.get_orders_by_status("pending")
+        assert len(orders) == 1
+        assert "供应商" in orders[0]["supplier_name"]
+
+    def test_kanban_data_after_order_deletion(self):
+        """Deleted order should not appear in kanban."""
+        sid = models.add_supplier("供应商A")
+        oid = models.create_order(sid)
+        data = models.get_kanban_data()
+        assert len(data["待处理"]) == 1
+
+        models.delete_order(oid)
+        data = models.get_kanban_data()
+        assert data["待处理"] == []
+
+    def test_concurrent_orders_same_supplier(self):
+        """Multiple orders from the same supplier appear correctly."""
+        sid = models.add_supplier("供应商A")
+        oid1 = models.create_order(sid)
+        oid2 = models.create_order(sid)
+        models.update_order_status(oid2, "confirmed")
+        data = models.get_kanban_data()
+        assert len(data["待处理"]) == 1
+        assert data["待处理"][0]["id"] == oid1
+        assert len(data["已确认"]) == 1
+        assert data["已确认"][0]["id"] == oid2
