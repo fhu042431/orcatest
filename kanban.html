@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>看板管理</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+    #app { min-height: 100vh; }
+
+    /* Header */
+    .header { background: #1a73e8; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header .back-btn { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .header .back-btn:hover { background: rgba(255,255,255,0.3); }
+
+    /* Board List */
+    .board-list { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .board-list h2 { margin-bottom: 16px; font-size: 18px; color: #555; }
+    .board-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .board-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: box-shadow 0.2s; }
+    .board-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .board-card h3 { margin-bottom: 8px; font-size: 16px; }
+    .board-card p { color: #888; font-size: 13px; }
+    .board-card .meta { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .board-card .delete-btn { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+    .board-card .delete-btn:hover { background: #fdecea; }
+
+    .add-board-form { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .add-board-form input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; font-size: 14px; }
+    .add-board-form textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 14px; resize: vertical; min-height: 60px; }
+
+    /* Buttons */
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-secondary { background: #e8eaed; color: #333; }
+    .btn-secondary:hover { background: #d2d5d9; }
+    .btn-success { background: #34a853; color: #fff; }
+    .btn-success:hover { background: #2d8e47; }
+    .btn-danger { background: #ea4335; color: #fff; }
+    .btn-danger:hover { background: #c5221f; }
+    .btn-small { padding: 4px 10px; font-size: 12px; }
+
+    /* Kanban Board View */
+    .board-header { padding: 16px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e0e0e0; background: #fff; }
+    .board-header h2 { font-size: 18px; }
+    .board-header .desc { color: #888; font-size: 13px; margin-left: 8px; }
+    .board-header .actions { margin-left: auto; display: flex; gap: 8px; }
+
+    .kanban-container { display: flex; gap: 16px; padding: 24px; overflow-x: auto; min-height: calc(100vh - 130px); align-items: flex-start; }
+    .column { background: #f7f8fa; border-radius: 8px; min-width: 300px; max-width: 300px; display: flex; flex-direction: column; max-height: calc(100vh - 160px); }
+    .column-header { padding: 12px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+    .column-header .count { background: #e0e0e0; color: #666; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+    .column-header .col-actions { display: flex; gap: 4px; }
+    .column-header .col-actions button { background: none; border: none; cursor: pointer; color: #888; font-size: 16px; padding: 2px 4px; border-radius: 4px; }
+    .column-header .col-actions button:hover { background: #e0e0e0; color: #333; }
+    .column-body { padding: 8px; flex: 1; overflow-y: auto; min-height: 60px; }
+    .column-footer { padding: 8px; }
+
+    /* Cards */
+    .card { background: #fff; border-radius: 6px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); cursor: grab; transition: box-shadow 0.2s, transform 0.1s; position: relative; }
+    .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+    .card.dragging { opacity: 0.5; transform: rotate(2deg); }
+    .card h4 { font-size: 14px; margin-bottom: 4px; }
+    .card p { font-size: 12px; color: #888; line-height: 1.4; }
+    .card .card-actions { position: absolute; top: 8px; right: 8px; display: none; gap: 2px; }
+    .card:hover .card-actions { display: flex; }
+    .card .card-actions button { background: none; border: none; cursor: pointer; color: #888; font-size: 14px; padding: 2px 4px; border-radius: 3px; }
+    .card .card-actions button:hover { background: #e8eaed; color: #333; }
+    .card .card-time { font-size: 11px; color: #aaa; margin-top: 6px; }
+
+    /* Add Card Form */
+    .add-card-form { display: flex; flex-direction: column; gap: 8px; }
+    .add-card-form input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+    .add-card-form textarea { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; resize: vertical; min-height: 50px; }
+    .add-card-form .form-actions { display: flex; gap: 8px; }
+
+    /* Add Column */
+    .add-column { min-width: 300px; max-width: 300px; }
+    .add-column-btn { width: 100%; padding: 12px; background: rgba(0,0,0,0.04); border: 2px dashed #ccc; border-radius: 8px; color: #888; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+    .add-column-btn:hover { background: rgba(0,0,0,0.06); border-color: #888; color: #555; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: #fff; border-radius: 8px; padding: 24px; width: 90%; max-width: 480px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .modal h3 { margin-bottom: 16px; font-size: 16px; }
+    .modal .form-group { margin-bottom: 12px; }
+    .modal label { display: block; margin-bottom: 4px; font-size: 13px; color: #555; }
+    .modal input, .modal textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .modal textarea { resize: vertical; min-height: 80px; }
+    .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+    /* Drop indicator */
+    .drop-indicator { height: 3px; background: #1a73e8; border-radius: 2px; margin: 4px 0; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Board List View -->
+    <div v-if="!currentBoard">
+      <div class="header">
+        <h1>看板管理</h1>
+      </div>
+      <div class="board-list">
+        <h2>我的看板</h2>
+        <div class="board-cards">
+          <div v-for="board in boards" :key="board.id" class="board-card" @click="openBoard(board.id)">
+            <h3>{{ board.name }}</h3>
+            <p>{{ board.description || '暂无描述' }}</p>
+            <div class="meta">
+              <span style="font-size:12px;color:#aaa;">{{ board.created_at }}</span>
+              <button class="delete-btn" @click.stop="deleteBoard(board.id)">删除</button>
+            </div>
+          </div>
+          <div class="add-board-form">
+            <input v-model="newBoard.name" placeholder="看板名称" @keyup.enter="createBoard">
+            <textarea v-model="newBoard.description" placeholder="描述（可选）"></textarea>
+            <button class="btn btn-primary" @click="createBoard" :disabled="!newBoard.name.trim()">创建看板</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kanban Board View -->
+    <div v-else>
+      <div class="board-header">
+        <button class="back-btn" @click="backToList">← 返回</button>
+        <h2>{{ currentBoard.name }}</h2>
+        <span class="desc" v-if="currentBoard.description">{{ currentBoard.description }}</span>
+        <div class="actions">
+          <button class="btn btn-secondary btn-small" @click="showEditBoard = true">编辑</button>
+        </div>
+      </div>
+      <div class="kanban-container">
+        <div v-for="column in currentBoard.columns" :key="column.id" class="column"
+             @dragover.prevent="onDragOver($event, column.id)"
+             @drop="onDrop($event, column.id)">
+          <div class="column-header">
+            <span>{{ column.name }}</span>
+            <span class="count">{{ column.cards.length }}</span>
+            <div class="col-actions">
+              <button @click="showEditColumn(column)" title="编辑列">✎</button>
+              <button @click="deleteColumn(column.id)" title="删除列">✕</button>
+            </div>
+          </div>
+          <div class="column-body">
+            <div v-for="card in column.cards" :key="card.id" class="card"
+                 draggable="true"
+                 @dragstart="onDragStart($event, card)"
+                 @dragend="onDragEnd">
+              <div class="card-actions">
+                <button @click="showEditCard(card, column.id)" title="编辑">✎</button>
+                <button @click="deleteCard(card.id)" title="删除">✕</button>
+              </div>
+              <h4>{{ card.title }}</h4>
+              <p v-if="card.description">{{ card.description }}</p>
+              <div class="card-time">{{ card.updated_at }}</div>
+            </div>
+          </div>
+          <div class="column-footer">
+            <div v-if="addingCardTo === column.id" class="add-card-form">
+              <input v-model="newCard.title" placeholder="卡片标题" @keyup.enter="createCard(column.id)" ref="cardTitleInput">
+              <textarea v-model="newCard.description" placeholder="描述（可选）"></textarea>
+              <div class="form-actions">
+                <button class="btn btn-success btn-small" @click="createCard(column.id)" :disabled="!newCard.title.trim()">添加</button>
+                <button class="btn btn-secondary btn-small" @click="cancelAddCard">取消</button>
+              </div>
+            </div>
+            <button v-else class="add-column-btn" @click="startAddCard(column.id)">+ 添加卡片</button>
+          </div>
+        </div>
+        <div class="add-column">
+          <div v-if="showAddColumn">
+            <input v-model="newColumn.name" placeholder="列名称" @keyup.enter="createColumn" ref="columnNameInput" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px;font-size:14px;">
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-success btn-small" @click="createColumn" :disabled="!newColumn.name.trim()">添加</button>
+              <button class="btn btn-secondary btn-small" @click="showAddColumn = false">取消</button>
+            </div>
+          </div>
+          <button v-else class="add-column-btn" @click="startAddColumn">+ 添加列</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Board Modal -->
+    <div v-if="showEditBoard" class="modal-overlay" @click.self="showEditBoard = false">
+      <div class="modal">
+        <h3>编辑看板</h3>
+        <div class="form-group">
+          <label>名称</label>
+          <input v-model="editBoardForm.name">
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea v-model="editBoardForm.description"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showEditBoard = false">取消</button>
+          <button class="btn btn-primary" @click="updateBoard">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Column Modal -->
+    <div v-if="showEditCol" class="modal-overlay" @click.self="showEditCol = false">
+      <div class="modal">
+        <h3>编辑列</h3>
+        <div class="form-group">
+          <label>名称</label>
+          <input v-model="editColForm.name">
+        </div>
+        <div class="form-group">
+          <label>位置</label>
+          <input v-model.number="editColForm.position" type="number">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showEditCol = false">取消</button>
+          <button class="btn btn-primary" @click="updateColumn">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Card Modal -->
+    <div v-if="showEditCd" class="modal-overlay" @click.self="showEditCd = false">
+      <div class="modal">
+        <h3>编辑卡片</h3>
+        <div class="form-group">
+          <label>标题</label>
+          <input v-model="editCardForm.title">
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea v-model="editCardForm.description"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showEditCd = false">取消</button>
+          <button class="btn btn-primary" @click="updateCard">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const boards = ref([]);
+        const currentBoard = ref(null);
+        const newBoard = reactive({ name: '', description: '' });
+        const newColumn = reactive({ name: '' });
+        const newCard = reactive({ title: '', description: '' });
+        const showAddColumn = ref(false);
+        const addingCardTo = ref(null);
+
+        // Modal states
+        const showEditBoard = ref(false);
+        const editBoardForm = reactive({ name: '', description: '' });
+        const showEditCol = ref(false);
+        const editColForm = reactive({ id: null, name: '', position: 0 });
+        const showEditCd = ref(false);
+        const editCardForm = reactive({ id: null, title: '', description: '' });
+
+        // Drag state
+        let draggedCard = null;
+
+        // API helpers
+        async function api(method, path, body = null) {
+          const opts = { method, headers: { 'Content-Type': 'application/json' } };
+          if (body) opts.body = JSON.stringify(body);
+          const res = await fetch(path, opts);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Request failed');
+          }
+          return res.json();
+        }
+
+        // Board operations
+        async function loadBoards() {
+          boards.value = await api('GET', '/api/boards');
+        }
+
+        async function createBoard() {
+          if (!newBoard.name.trim()) return;
+          await api('POST', '/api/boards', { name: newBoard.name, description: newBoard.description });
+          newBoard.name = '';
+          newBoard.description = '';
+          await loadBoards();
+        }
+
+        async function deleteBoard(id) {
+          if (!confirm('确定删除此看板？')) return;
+          await api('DELETE', `/api/boards/${id}`);
+          await loadBoards();
+        }
+
+        async function openBoard(id) {
+          currentBoard.value = await api('GET', `/api/boards/${id}`);
+        }
+
+        function backToList() {
+          currentBoard.value = null;
+          loadBoards();
+        }
+
+        async function updateBoard() {
+          await api('PUT', `/api/boards/${currentBoard.value.id}`, {
+            name: editBoardForm.name,
+            description: editBoardForm.description,
+          });
+          showEditBoard.value = false;
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        // Column operations
+        function startAddColumn() {
+          showAddColumn.value = true;
+          newColumn.name = '';
+          nextTick(() => {
+            const el = document.querySelector('.add-column input');
+            if (el) el.focus();
+          });
+        }
+
+        async function createColumn() {
+          if (!newColumn.name.trim()) return;
+          const pos = currentBoard.value.columns.length;
+          await api('POST', `/api/boards/${currentBoard.value.id}/columns`, {
+            name: newColumn.name,
+            position: pos,
+          });
+          showAddColumn.value = false;
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        async function deleteColumn(id) {
+          if (!confirm('确定删除此列？')) return;
+          await api('DELETE', `/api/columns/${id}`);
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        function showEditColumn(col) {
+          editColForm.id = col.id;
+          editColForm.name = col.name;
+          editColForm.position = col.position;
+          showEditCol.value = true;
+        }
+
+        async function updateColumn() {
+          await api('PUT', `/api/columns/${editColForm.id}`, {
+            name: editColForm.name,
+            position: editColForm.position,
+          });
+          showEditCol.value = false;
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        // Card operations
+        function startAddCard(columnId) {
+          addingCardTo.value = columnId;
+          newCard.title = '';
+          newCard.description = '';
+          nextTick(() => {
+            const forms = document.querySelectorAll('.add-card-form input');
+            if (forms.length) forms[forms.length - 1].focus();
+          });
+        }
+
+        function cancelAddCard() {
+          addingCardTo.value = null;
+          newCard.title = '';
+          newCard.description = '';
+        }
+
+        async function createCard(columnId) {
+          if (!newCard.title.trim()) return;
+          await api('POST', `/api/columns/${columnId}/cards`, {
+            title: newCard.title,
+            description: newCard.description,
+          });
+          cancelAddCard();
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        async function deleteCard(id) {
+          if (!confirm('确定删除此卡片？')) return;
+          await api('DELETE', `/api/cards/${id}`);
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        function showEditCard(card, columnId) {
+          editCardForm.id = card.id;
+          editCardForm.title = card.title;
+          editCardForm.description = card.description;
+          showEditCd.value = true;
+        }
+
+        async function updateCard() {
+          await api('PUT', `/api/cards/${editCardForm.id}`, {
+            title: editCardForm.title,
+            description: editCardForm.description,
+          });
+          showEditCd.value = false;
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        // Drag & Drop
+        function onDragStart(event, card) {
+          draggedCard = card;
+          event.target.classList.add('dragging');
+          event.dataTransfer.effectAllowed = 'move';
+        }
+
+        function onDragEnd(event) {
+          event.target.classList.remove('dragging');
+          draggedCard = null;
+        }
+
+        function onDragOver(event, columnId) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+
+        async function onDrop(event, targetColumnId) {
+          if (!draggedCard) return;
+          event.preventDefault();
+          await api('PUT', `/api/cards/${draggedCard.id}/move`, {
+            column_id: targetColumnId,
+          });
+          currentBoard.value = await api('GET', `/api/boards/${currentBoard.value.id}`);
+        }
+
+        // Edit board modal watcher
+        if (showEditBoard) {
+          Vue.watch(showEditBoard, (val) => {
+            if (val && currentBoard.value) {
+              editBoardForm.name = currentBoard.value.name;
+              editBoardForm.description = currentBoard.value.description || '';
+            }
+          });
+        }
+
+        onMounted(() => {
+          loadBoards();
+        });
+
+        return {
+          boards, currentBoard, newBoard, newColumn, newCard,
+          showAddColumn, addingCardTo,
+          showEditBoard, editBoardForm, showEditCol, editColForm, showEditCd, editCardForm,
+          loadBoards, createBoard, deleteBoard, openBoard, backToList, updateBoard,
+          startAddColumn, createColumn, deleteColumn, showEditColumn, updateColumn,
+          startAddCard, cancelAddCard, createCard, deleteCard, showEditCard, updateCard,
+          onDragStart, onDragEnd, onDragOver, onDrop,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

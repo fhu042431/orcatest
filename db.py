@@ -81,6 +81,33 @@ def init_db(db_path=None):
             display_name TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS kanban_boards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS kanban_columns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            board_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (board_id) REFERENCES kanban_boards(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS kanban_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            column_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (column_id) REFERENCES kanban_columns(id) ON DELETE CASCADE
+        );
     """)
 
     conn.commit()

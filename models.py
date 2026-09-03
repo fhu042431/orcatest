@@ -258,3 +258,214 @@ def delete_order(order_id):
     conn.execute("DELETE FROM purchase_orders WHERE id = ?", (order_id,))
     conn.commit()
     conn.close()
+
+
+# ─── Kanban Boards ────────────────────────────────────────
+
+def add_board(name, description=None):
+    """Create a new kanban board. Returns the new board id."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO kanban_boards (name, description) VALUES (?, ?)",
+        (name, description),
+    )
+    conn.commit()
+    row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_board(board_id):
+    """Return a single kanban board by id, or None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM kanban_boards WHERE id = ?", (board_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_all_boards():
+    """Return all kanban boards."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM kanban_boards ORDER BY id"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def update_board(board_id, **kwargs):
+    """Update board fields. Ignored keys are silently skipped."""
+    allowed = {"name", "description"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [board_id]
+    conn = get_connection()
+    conn.execute(f"UPDATE kanban_boards SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def delete_board(board_id):
+    """Delete a board and its columns and cards (via cascade)."""
+    conn = get_connection()
+    conn.execute("DELETE FROM kanban_boards WHERE id = ?", (board_id,))
+    conn.commit()
+    conn.close()
+
+
+# ─── Kanban Columns ───────────────────────────────────────
+
+def add_column(board_id, name, position=0):
+    """Add a column to a board. Returns the new column id."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO kanban_columns (board_id, name, position) VALUES (?, ?, ?)",
+        (board_id, name, position),
+    )
+    conn.commit()
+    row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_column(column_id):
+    """Return a single column by id, or None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM kanban_columns WHERE id = ?", (column_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_columns_by_board(board_id):
+    """Return all columns for a board, ordered by position."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM kanban_columns WHERE board_id = ? ORDER BY position, id",
+        (board_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def update_column(column_id, **kwargs):
+    """Update column fields."""
+    allowed = {"name", "position"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [column_id]
+    conn = get_connection()
+    conn.execute(f"UPDATE kanban_columns SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def delete_column(column_id):
+    """Delete a column and its cards (via cascade)."""
+    conn = get_connection()
+    conn.execute("DELETE FROM kanban_columns WHERE id = ?", (column_id,))
+    conn.commit()
+    conn.close()
+
+
+# ─── Kanban Cards ─────────────────────────────────────────
+
+def add_card(column_id, title, description=None, position=0):
+    """Add a card to a column. Returns the new card id."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "INSERT INTO kanban_cards (column_id, title, description, position) "
+        "VALUES (?, ?, ?, ?)",
+        (column_id, title, description, position),
+    )
+    conn.commit()
+    row_id = cursor.lastrowid
+    conn.close()
+    return row_id
+
+
+def get_card(card_id):
+    """Return a single card by id, or None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM kanban_cards WHERE id = ?", (card_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_cards_by_column(column_id):
+    """Return all cards for a column, ordered by position."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM kanban_cards WHERE column_id = ? ORDER BY position, id",
+        (column_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def update_card(card_id, **kwargs):
+    """Update card fields. Automatically updates updated_at timestamp."""
+    allowed = {"title", "description", "position", "column_id"}
+    fields = {}
+    for k, v in kwargs.items():
+        if k in allowed and v is not None:
+            fields[k] = v
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [card_id]
+    conn = get_connection()
+    conn.execute(
+        f"UPDATE kanban_cards SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def move_card(card_id, target_column_id, position=None):
+    """Move a card to a target column at a specific position."""
+    if position is None:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM kanban_cards WHERE column_id = ?",
+            (target_column_id,),
+        ).fetchone()
+        position = row[0]
+        conn.close()
+    return update_card(card_id, column_id=target_column_id, position=position)
+
+
+def delete_card(card_id):
+    """Delete a card."""
+    conn = get_connection()
+    conn.execute("DELETE FROM kanban_cards WHERE id = ?", (card_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_board_with_details(board_id):
+    """Return a board with its columns and cards nested."""
+    board = get_board(board_id)
+    if not board:
+        return None
+    columns = get_columns_by_board(board_id)
+    result = dict(board)
+    result["columns"] = []
+    for col in columns:
+        col_dict = dict(col)
+        col_dict["cards"] = [dict(c) for c in get_cards_by_column(col["id"])]
+        result["columns"].append(col_dict)
+    return result
