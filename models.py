@@ -258,3 +258,74 @@ def delete_order(order_id):
     conn.execute("DELETE FROM purchase_orders WHERE id = ?", (order_id,))
     conn.commit()
     conn.close()
+
+
+# ─── Kanban Board ──────────────────────────────────────────
+
+# Valid status columns for the Kanban board
+KANBAN_STATUSES = ["pending", "confirmed", "shipped", "received", "cancelled"]
+
+
+def get_orders_by_status(status):
+    """Return all orders with a given status, including supplier name and item count."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT o.id, o.supplier_id, s.name AS supplier_name, o.total_amount, "
+        "o.status, o.created_at, "
+        "COUNT(oi.id) AS item_count "
+        "FROM purchase_orders o "
+        "JOIN suppliers s ON o.supplier_id = s.id "
+        "LEFT JOIN order_items oi ON oi.order_id = o.id "
+        "WHERE o.status = ? "
+        "GROUP BY o.id "
+        "ORDER BY o.created_at DESC",
+        (status,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_kanban_data():
+    """Return all orders grouped by status for the Kanban board.
+
+    Returns a dict: {status: [order_dict, ...], ...}
+    Only includes valid Kanban statuses.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT o.id, o.supplier_id, s.name AS supplier_name, o.total_amount, "
+        "o.status, o.created_at, "
+        "COUNT(oi.id) AS item_count "
+        "FROM purchase_orders o "
+        "JOIN suppliers s ON o.supplier_id = s.id "
+        "LEFT JOIN order_items oi ON oi.order_id = o.id "
+        "GROUP BY o.id "
+        "ORDER BY o.created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    result = {status: [] for status in KANBAN_STATUSES}
+    for row in rows:
+        status = row["status"]
+        if status in result:
+            result[status].append({
+                "id": row["id"],
+                "supplier_id": row["supplier_id"],
+                "supplier_name": row["supplier_name"],
+                "total_amount": row["total_amount"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "item_count": row["item_count"],
+            })
+    return result
+
+
+def move_order_status(order_id, new_status):
+    """Move an order to a new status. Returns True on success, False if invalid."""
+    if new_status not in KANBAN_STATUSES:
+        return False
+    order = get_order(order_id)
+    if order is None:
+        return False
+    update_order_status(order_id, new_status)
+    return True

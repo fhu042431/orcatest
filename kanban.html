@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>采购看板 - Kanban Board</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #1a73e8;
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-refresh {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        .btn-refresh:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .board {
+            display: flex;
+            gap: 16px;
+            padding: 24px;
+            overflow-x: auto;
+            min-height: calc(100vh - 64px);
+        }
+
+        .column {
+            min-width: 280px;
+            max-width: 320px;
+            flex: 1;
+            background: #e8eaed;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 112px);
+        }
+
+        .column-header {
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 14px;
+            border-bottom: 2px solid transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .column-header .count {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .column-body {
+            padding: 8px;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 100px;
+        }
+
+        .column-body.drag-over {
+            background: rgba(26, 115, 232, 0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: grab;
+            transition: all 0.2s;
+        }
+
+        .card:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+        }
+
+        .card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .card-id {
+            font-size: 12px;
+            color: #5f6368;
+            margin-bottom: 4px;
+        }
+
+        .card-supplier {
+            font-weight: 600;
+            font-size: 14px;
+            color: #202124;
+            margin-bottom: 8px;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #5f6368;
+        }
+
+        .card-amount {
+            font-weight: 600;
+            color: #1a73e8;
+        }
+
+        .card-items {
+            background: #e8f0fe;
+            color: #1a73e8;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .card-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .card-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            color: #5f6368;
+            transition: all 0.2s;
+        }
+
+        .card-btn:hover {
+            background: #f8f9fa;
+            border-color: #1a73e8;
+            color: #1a73e8;
+        }
+
+        .status-colors {
+            --pending: #f9ab00;
+            --confirmed: #1a73e8;
+            --shipped: #9334e6;
+            --received: #0d904f;
+            --cancelled: #d93025;
+        }
+
+        .column[data-status="pending"] .column-header { border-bottom-color: #f9ab00; }
+        .column[data-status="confirmed"] .column-header { border-bottom-color: #1a73e8; }
+        .column[data-status="shipped"] .column-header { border-bottom-color: #9334e6; }
+        .column[data-status="received"] .column-header { border-bottom-color: #0d904f; }
+        .column[data-status="cancelled"] .column-header { border-bottom-color: #d93025; }
+
+        .empty-state {
+            text-align: center;
+            padding: 24px;
+            color: #80868b;
+            font-size: 13px;
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            color: #5f6368;
+        }
+
+        .error {
+            background: #fce8e6;
+            color: #d93025;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 24px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #323232;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .refresh-icon {
+            display: inline-block;
+            transition: transform 0.3s;
+        }
+
+        .refresh-icon.spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>采购看板</h1>
+            <div class="header-actions">
+                <span style="font-size: 13px; opacity: 0.8;">
+                    上次刷新: {{ lastRefresh }}
+                </span>
+                <button class="btn btn-refresh" @click="refreshData" :disabled="loading">
+                    <span class="refresh-icon" :class="{ spinning: loading }">&#8635;</span>
+                    刷新
+                </button>
+            </div>
+        </div>
+
+        <div v-if="error" class="error">
+            {{ error }}
+        </div>
+
+        <div v-else-if="loading && !kanbanData" class="loading">
+            加载中...
+        </div>
+
+        <div v-else class="board">
+            <div v-for="col in columns" :key="col.status"
+                 class="column"
+                 :data-status="col.status"
+                 @dragover.prevent="onDragOver($event, col.status)"
+                 @dragleave="onDragLeave($event)"
+                 @drop="onDrop($event, col.status)">
+                <div class="column-header">
+                    <span>{{ col.label }}</span>
+                    <span class="count">{{ getColumnOrders(col.status).length }}</span>
+                </div>
+                <div class="column-body"
+                     :class="{ 'drag-over': dragOverStatus === col.status }">
+                    <div v-if="getColumnOrders(col.status).length === 0" class="empty-state">
+                        暂无订单
+                    </div>
+                    <div v-for="order in getColumnOrders(col.status)"
+                         :key="order.id"
+                         class="card"
+                         :class="{ dragging: draggedOrder && draggedOrder.id === order.id }"
+                         draggable="true"
+                         @dragstart="onDragStart($event, order)"
+                         @dragend="onDragEnd">
+                        <div class="card-id">订单 #{{ order.id }}</div>
+                        <div class="card-supplier">{{ order.supplier_name }}</div>
+                        <div class="card-footer">
+                            <span class="card-amount">¥{{ formatAmount(order.total_amount) }}</span>
+                            <span class="card-items">{{ order.item_count }} 项</span>
+                        </div>
+                        <div class="card-actions">
+                            <button v-for="target in getMoveTargets(col.status)"
+                                    :key="target.status"
+                                    class="card-btn"
+                                    @click.stop="moveOrder(order.id, target.status)">
+                                &#10140; {{ target.label }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="toast" class="toast">{{ toast }}</div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const kanbanData = ref(null);
+                const loading = ref(false);
+                const error = ref(null);
+                const toast = ref(null);
+                const lastRefresh = ref('--');
+                const draggedOrder = ref(null);
+                const dragOverStatus = ref(null);
+
+                const columns = [
+                    { status: 'pending', label: '待处理' },
+                    { status: 'confirmed', label: '已确认' },
+                    { status: 'shipped', label: '已发货' },
+                    { status: 'received', label: '已收货' },
+                    { status: 'cancelled', label: '已取消' },
+                ];
+
+                const statusLabels = {
+                    pending: '待处理',
+                    confirmed: '已确认',
+                    shipped: '已发货',
+                    received: '已收货',
+                    cancelled: '已取消',
+                };
+
+                // Define valid transitions
+                const validTransitions = {
+                    pending: ['confirmed', 'cancelled'],
+                    confirmed: ['shipped', 'cancelled'],
+                    shipped: ['received'],
+                    received: [],
+                    cancelled: [],
+                };
+
+                function getMoveTargets(currentStatus) {
+                    const targets = validTransitions[currentStatus] || [];
+                    return targets.map(s => ({ status: s, label: statusLabels[s] }));
+                }
+
+                function getColumnOrders(status) {
+                    if (!kanbanData.value) return [];
+                    return kanbanData.value[status] || [];
+                }
+
+                function formatAmount(amount) {
+                    return Number(amount).toFixed(2);
+                }
+
+                async function fetchKanbanData() {
+                    loading.value = true;
+                    error.value = null;
+                    try {
+                        const resp = await fetch('/api/kanban');
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        kanbanData.value = await resp.json();
+                        lastRefresh.value = new Date().toLocaleTimeString('zh-CN');
+                    } catch (e) {
+                        error.value = '加载数据失败: ' + e.message;
+                    } finally {
+                        loading.value = false;
+                    }
+                }
+
+                async function moveOrder(orderId, newStatus) {
+                    try {
+                        const resp = await fetch('/api/move', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ order_id: orderId, new_status: newStatus }),
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok) throw new Error(data.error || '操作失败');
+                        showToast(`订单 #${orderId} 已移至 ${statusLabels[newStatus]}`);
+                        await fetchKanbanData();
+                    } catch (e) {
+                        showToast('操作失败: ' + e.message);
+                    }
+                }
+
+                function showToast(message) {
+                    toast.value = message;
+                    setTimeout(() => { toast.value = null; }, 3000);
+                }
+
+                function refreshData() {
+                    fetchKanbanData();
+                }
+
+                // Drag and drop handlers
+                function onDragStart(event, order) {
+                    draggedOrder.value = order;
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', order.id);
+                }
+
+                function onDragEnd() {
+                    draggedOrder.value = null;
+                    dragOverStatus.value = null;
+                }
+
+                function onDragOver(event, status) {
+                    event.preventDefault();
+                    dragOverStatus.value = status;
+                }
+
+                function onDragLeave(event) {
+                    // Only clear if leaving the column entirely
+                    const related = event.relatedTarget;
+                    if (!related || !event.currentTarget.contains(related)) {
+                        dragOverStatus.value = null;
+                    }
+                }
+
+                function onDrop(event, targetStatus) {
+                    event.preventDefault();
+                    dragOverStatus.value = null;
+
+                    if (!draggedOrder.value) return;
+
+                    const order = draggedOrder.value;
+                    const currentStatus = order.status;
+
+                    if (currentStatus === targetStatus) return;
+
+                    if (validTransitions[currentStatus] && validTransitions[currentStatus].includes(targetStatus)) {
+                        moveOrder(order.id, targetStatus);
+                    } else {
+                        showToast(`不允许从 ${statusLabels[currentStatus]} 移至 ${statusLabels[targetStatus]}`);
+                    }
+                }
+
+                // Auto-refresh every 30 seconds
+                let refreshInterval = null;
+
+                onMounted(() => {
+                    fetchKanbanData();
+                    refreshInterval = setInterval(fetchKanbanData, 30000);
+                });
+
+                onUnmounted(() => {
+                    if (refreshInterval) clearInterval(refreshInterval);
+                });
+
+                return {
+                    kanbanData,
+                    loading,
+                    error,
+                    toast,
+                    lastRefresh,
+                    draggedOrder,
+                    dragOverStatus,
+                    columns,
+                    getColumnOrders,
+                    getMoveTargets,
+                    formatAmount,
+                    moveOrder,
+                    refreshData,
+                    onDragStart,
+                    onDragEnd,
+                    onDragOver,
+                    onDragLeave,
+                    onDrop,
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
