@@ -258,3 +258,42 @@ def delete_order(order_id):
     conn.execute("DELETE FROM purchase_orders WHERE id = ?", (order_id,))
     conn.commit()
     conn.close()
+
+
+# ─── Kanban ────────────────────────────────────────────────
+
+VALID_STATUSES = ("pending", "confirmed", "shipped", "received", "cancelled")
+
+
+def get_orders_by_status(status):
+    """Return all orders with a given status, joined with supplier name."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT o.id, s.name AS supplier_name, o.total_amount, o.status, o.created_at "
+        "FROM purchase_orders o "
+        "JOIN suppliers s ON o.supplier_id = s.id "
+        "WHERE o.status = ? "
+        "ORDER BY o.id",
+        (status,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_kanban_data():
+    """Return orders grouped by all valid statuses for the kanban view."""
+    result = {}
+    for status in VALID_STATUSES:
+        result[status] = [dict(row) for row in get_orders_by_status(status)]
+    return result
+
+
+def move_order(order_id, new_status):
+    """Move an order to a new status. Returns True on success, False if invalid."""
+    if new_status not in VALID_STATUSES:
+        return False
+    order = get_order(order_id)
+    if order is None:
+        return False
+    update_order_status(order_id, new_status)
+    return True
